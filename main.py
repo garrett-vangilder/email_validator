@@ -86,7 +86,7 @@ def validate_spf(email):
         verbose=True,
     )
 
-    if spf_resp[0] in ['pass', 'neutral', 'unknown']:
+    if spf_resp[0] in ['pass', 'neutral']:
         return True
 
     print(f'Email failed SPF: {spf_resp}')
