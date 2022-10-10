@@ -8,6 +8,7 @@ import logging
 from email import policy
 from email.parser import BytesParser
 
+
 def main(argv):
     """
     Entry point for SPF/DKIM validator
