@@ -3,11 +3,18 @@ import sys
 import re
 import spf
 import dkim
+import logging
 
 from email import policy
 from email.parser import BytesParser
 
 def main(argv):
+    """
+    Entry point for SPF/DKIM validator
+
+    Options:
+        - [REQUIRED] -e / --email_file_path | This is the relative path to the raw email that you'd like to validate.
+    """
     email_file_path = None
     email = None
 
@@ -15,7 +22,7 @@ def main(argv):
         opts, args = getopt.getopt(argv[1:], "e:", ["email_file_path"])
 
     except getopt.GetoptError:
-        print('Failed to parse message headers. Try again.')
+        print('Failed to parse email path. Try again.')
         sys.exit(1)
 
     for opt, arg in opts:
@@ -23,7 +30,7 @@ def main(argv):
             email_file_path = arg
 
     if not email_file_path:
-        print('Failed to include message headers\' path (-efp). Try again.')
+        print('Failed to include email path (-e). Try again.')
         sys.exit(1)
 
     with open(email_file_path, 'rb') as fp:
@@ -34,20 +41,25 @@ def main(argv):
             sys.exit(1)
 
         if validate_spf(email) and validate_dkim(fp):
-            print('Email is valid')
+            print('Email is ok.')
         else:
-            print('Email is invalid')
+            print('Email is not ok.')
 
 
 def validate_spf(email):
     """
-    :param email:
-    :return:
+    Validates that the included SPF header passes an SPF check. Uses pydns and spf library to safely make the assumption.
+
+    :param email: email.message.EmailMessage The email to validate SPF
+    :return: bool
     """
-    # get IP address from SPF key
+
+    # get IP address, from, and to headers from email
     spf_key = email.get('Received-SPF')
     from_key = email.get('From')
     to_key = email.get('To')
+
+    # Parse headers
     if not spf_key:
         return False
     ip_pattern = re.compile(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
@@ -66,22 +78,42 @@ def validate_spf(email):
     if not to_address:
         return False
 
+    # Run validation
     spf_resp = spf.check2(
         i=ip_address,
         s=from_address,
-        h=domain
+        h=domain,
+        verbose=True,
     )
+
     if spf_resp[0] in ['pass', 'neutral', 'unknown']:
         return True
 
-    print(f'Email failed SPF: {spf_resp[1]}')
+    print(f'Email failed SPF: {spf_resp}')
+    print(f'Failed IP: {ip_address}')
+    print(f'Failed Host: {domain}')
+    print(f'Failed From Address: {from_address}')
     return False
 
 
 def validate_dkim(fp):
-    """"""
+    """
+    Performs DKIM validation against raw email file
+
+    :param fp: Raw file to be passed to `dkim.verify`, does not accept email.message.EmailMessage
+    :return: bool
+    """
+    logger = logging.getLogger('validate_dkim')
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    logger.addHandler(ch)
+
     fp.seek(0)
-    dkim_resp = dkim.verify(fp.read())
+    dkim_resp = dkim.verify(fp.read(), logger=logger)
+    if not dkim_resp:
+        print('Email failed DKIM')
+
     return dkim_resp
 
 
